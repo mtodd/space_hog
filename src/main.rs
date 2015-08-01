@@ -1,9 +1,13 @@
 extern crate rustc_serialize;
 extern crate docopt;
 
+use std::fmt;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+
+use std::sync::mpsc::{channel,Sender,Receiver};
+use std::thread;
 
 // https://github.com/docopt/docopt.rs
 use docopt::Docopt;
@@ -38,6 +42,12 @@ struct FileWithSize {
     size: u64
 }
 
+impl fmt::Display for FileWithSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FileWithSize {{ path: {}, size: {} }}", self.path.display(), self.size)
+    }
+}
+
 const DEFAULT_THRESHOLD: u64 = 150; // bytes
 
 fn main() {
@@ -55,7 +65,70 @@ fn main() {
 
     let mut files: Vec<FileWithSize> = Vec::new();
 
-    scan(&mut files, path, 0, &args);
+    let (path_tx, path_rx) = channel::<(PathBuf, fs::Metadata)>();
+    let (out_tx,  out_rx)  = channel::<FileWithSize>();
+
+    // path scanner
+    // thread::spawn(move|| {
+    //     match path_rx.recv() {
+    //         Err(why) => { panic!("dir") },
+    //         Ok((path, metadata)) => {
+    //             if !metadata.is_dir() {
+    //                 file_tx.send((path, metadata));
+    //             }
+    //         }
+    //     };
+    // });
+    // thread::spawn(move|| {
+    //     match file_rx.recv() {
+    //         Err(why) => { panic!("file {}", why) },
+    //         Ok((path, metadata)) => {
+    //             out_tx.send(FileWithSize { path: path.clone(), size: metadata.len() });
+    //         }
+    //     };
+    // });
+
+    // output
+    thread::spawn(move|| {
+        loop {
+            match out_rx.recv() {
+                Err(why) => {},
+                Ok(file) => {
+                    println!("{}\t{}", file.path.display(), file.size);
+                }
+            };
+        };
+    });
+
+    // println!("{}", out_rx.recv().unwrap());
+
+    scan_dir(path, 0, &out_tx);
+}
+
+// scan through directories
+fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<FileWithSize>) {
+    match fs::read_dir(&path) {
+        Err(why) => {},
+        Ok(paths) => {
+            for path in paths {
+                match path {
+                    Err(why) => { panic!("path {}", why) },
+                    Ok(path) => {
+                        match fs::metadata(&path.path().clone()) {
+                            Err(why) => { panic!("metadata for {}", path.path().display()) },
+                            Ok(metadata) => {
+                                if metadata.is_dir() {
+                                    scan_dir(path.path(), currdepth + 1, &out_tx);
+                                } else {
+                                    out_tx.send(FileWithSize { path: path.path().clone(), size: metadata.len() });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn scan(files: &mut Vec<FileWithSize>, path: PathBuf, mut currdepth: u64, args: &Args) {
