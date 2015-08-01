@@ -105,15 +105,15 @@ fn main() {
         };
     });
 
-    // println!("{}", out_rx.recv().unwrap());
-
-    scan_dir(path, 0, &out_tx);
+    scan_dir(path, 0, &out_tx, &args);
 
     outputter.join();
 }
 
 // scan through directories
-fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSize>>) {
+fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSize>>, args: &Args) {
+    let threshold = args.flag_threshold.unwrap_or_else(|| DEFAULT_THRESHOLD);
+
     match fs::read_dir(&path) {
         Err(why) => {},
         Ok(paths) => {
@@ -122,12 +122,14 @@ fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSi
                     Err(why) => { panic!("path {}", why) },
                     Ok(path) => {
                         match fs::metadata(&path.path().clone()) {
-                            Err(why) => { panic!("metadata for {}", path.path().display()) },
+                            Err(why) => {}, // { panic!("metadata for {}", path.path().display()) },
                             Ok(metadata) => {
                                 if metadata.is_dir() {
-                                    scan_dir(path.path(), currdepth + 1, &out_tx);
+                                    scan_dir(path.path(), currdepth + 1, &out_tx, &args);
                                 } else {
-                                    out_tx.send(Some(FileWithSize { path: path.path().clone(), size: metadata.len() }));
+                                    if metadata.len() > threshold {
+                                        out_tx.send(Some(FileWithSize { path: path.path().clone(), size: metadata.len() }));
+                                    }
                                 }
                             }
                         }
