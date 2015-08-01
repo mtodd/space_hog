@@ -44,43 +44,49 @@ fn main() {
     let mut args: Args = Docopt::new(USAGE)
                                 .and_then(|d| d.decode())
                                 .unwrap_or_else(|e| e.exit());
-    println!("{:?}", args);
-
-    let mut currdepth: u64 = 0;
+    // println!("{:?}", args);
 
     let path = match args.arg_path {
         None => env::current_dir().unwrap(),
         Some(ref path) => PathBuf::from(path),
     };
 
-    println!("The current directory is {}", path.display());
+    // println!("The current directory is {}", path.display());
 
     let mut files: Vec<FileWithSize> = Vec::new();
 
-    scan(&mut files, path, currdepth, &args);
+    scan(&mut files, path, 0, &args);
 }
 
 fn scan(files: &mut Vec<FileWithSize>, path: PathBuf, mut currdepth: u64, args: &Args) {
     let threshold = args.flag_threshold.unwrap_or_else(|| DEFAULT_THRESHOLD);
-    let paths = fs::read_dir(&path).unwrap();
 
-    currdepth += 1;
+    match fs::read_dir(&path) {
+        Err(why) => {},
+        Ok(paths) => {
+            currdepth += 1;
 
-    for path in paths {
-        let upath = path.unwrap().path();
+            for path in paths {
+                let upath = path.unwrap().path();
 
-        let metadata = fs::metadata(&upath).unwrap();
-        let file_size = metadata.len();
+                match fs::metadata(&upath) {
+                    Err(why) => {},
+                    Ok(metadata) => {
+                        let file_size = metadata.len();
 
-        // report this file
-        if !metadata.is_dir() && file_size > threshold {
-            println!("{}\t{}", upath.display(), file_size);
-            files.push(FileWithSize { path: upath.clone(), size: file_size });
-        }
+                        // report this file
+                        if !metadata.is_dir() && file_size > threshold {
+                            println!("{}\t{}", upath.display(), file_size);
+                            files.push(FileWithSize { path: upath.clone(), size: file_size });
+                        }
 
-        // recurse directories
-        if args.flag_recursive && (args.flag_depth == None || currdepth < args.flag_depth.unwrap()) && metadata.is_dir() {
-            scan(files, upath.clone(), currdepth, args);
+                        // recurse directories
+                        if args.flag_recursive && (args.flag_depth == None || currdepth < args.flag_depth.unwrap()) && metadata.is_dir() {
+                            scan(files, upath.clone(), currdepth, args);
+                        }
+                    }
+                }
+            }
         }
     }
 }
