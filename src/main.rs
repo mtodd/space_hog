@@ -1,30 +1,36 @@
+extern crate rustc_serialize;
+extern crate docopt;
+
 use std::env;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::process;
+use std::path::PathBuf;
+
+// https://github.com/docopt/docopt.rs
+use docopt::Docopt;
 
 static USAGE: &'static str = "
 Space Hog: find large files recursively.
 
 Usage:
-  space_hog <path>
-  space_hog <path> [-r] [-t=<bytes>] [-d=<depth>]
+  space_hog [<path>]
+  space_hog [<path>] [--recursive] [--threshold=<bytes>] [--depth=<depth>]
   space_hog (-h | --help)
   space_hog --version
 
 Options:
-  -h --help     Show this screen.
-  --version     Show version.
-  -r            Recursively scan.
-  -t=<bytes>    Threshold, in bytes.
-  -d=<depth>    Depth limit.
+  -h --help             Show this screen.
+  --version             Show version.
+  --recursive           Recursively scan.
+  --threshold=<bytes>   Threshold, in bytes.
+  --depth=<depth>       Depth limit.
 ";
 
+#[derive(Debug, RustcDecodable)]
 struct Args {
-    flag_r: bool,
-    flag_t: Option<u64>,
-    flag_d: Option<u64>,
-    arg_path: PathBuf,
+    flag_recursive: bool,
+    flag_threshold: Option<u64>,
+    flag_depth: Option<u64>,
+    arg_path: Option<String>,
 }
 
 struct FileWithSize {
@@ -32,24 +38,30 @@ struct FileWithSize {
     size: u64
 }
 
-fn main() {
-    println!("space_hog [-r] [-t 128] .");
-    println!("recursively find large files");
-    println!("");
+const DEFAULT_THRESHOLD: u64 = 150; // bytes
 
-    let pwd = env::current_dir().unwrap();
-    let args: Args = Args { flag_r: true, flag_t: Some(150), flag_d: None, arg_path: pwd.clone() };
+fn main() {
+    let mut args: Args = Docopt::new(USAGE)
+                                .and_then(|d| d.decode())
+                                .unwrap_or_else(|e| e.exit());
+    println!("{:?}", args);
 
     let mut currdepth: u64 = 0;
 
-    println!("The current directory is {}", pwd.display());
+    let path = match args.arg_path {
+        None => env::current_dir().unwrap(),
+        Some(ref path) => PathBuf::from(path),
+    };
+
+    println!("The current directory is {}", path.display());
 
     let mut files: Vec<FileWithSize> = Vec::new();
 
-    scan(&mut files, pwd.clone(), currdepth, &args);
+    scan(&mut files, path, currdepth, &args);
 }
 
 fn scan(files: &mut Vec<FileWithSize>, path: PathBuf, mut currdepth: u64, args: &Args) {
+    let threshold = args.flag_threshold.unwrap_or_else(|| DEFAULT_THRESHOLD);
     let paths = fs::read_dir(&path).unwrap();
 
     currdepth += 1;
@@ -61,13 +73,13 @@ fn scan(files: &mut Vec<FileWithSize>, path: PathBuf, mut currdepth: u64, args: 
         let file_size = metadata.len();
 
         // report this file
-        if !metadata.is_dir() && file_size > args.flag_t.unwrap() {
+        if !metadata.is_dir() && file_size > threshold {
             println!("{}\t{}", upath.display(), file_size);
             files.push(FileWithSize { path: upath.clone(), size: file_size });
         }
 
         // recurse directories
-        if args.flag_r && (args.flag_d == None || currdepth < args.flag_d.unwrap()) && metadata.is_dir() {
+        if args.flag_recursive && (args.flag_depth == None || currdepth < args.flag_depth.unwrap()) && metadata.is_dir() {
             scan(files, upath.clone(), currdepth, args);
         }
     }
