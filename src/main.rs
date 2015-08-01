@@ -66,7 +66,7 @@ fn main() {
     let mut files: Vec<FileWithSize> = Vec::new();
 
     let (path_tx, path_rx) = channel::<(PathBuf, fs::Metadata)>();
-    let (out_tx,  out_rx)  = channel::<FileWithSize>();
+    let (out_tx,  out_rx)  = channel::<Option<FileWithSize>>();
 
     // path scanner
     // thread::spawn(move|| {
@@ -89,12 +89,17 @@ fn main() {
     // });
 
     // output
-    thread::spawn(move|| {
+    let outputter = thread::spawn(move|| {
         loop {
             match out_rx.recv() {
                 Err(why) => {},
                 Ok(file) => {
-                    println!("{}\t{}", file.path.display(), file.size);
+                    match file {
+                        None => break,
+                        Some(file) => {
+                            println!("{}\t{}", file.path.display(), file.size);
+                        }
+                    };
                 }
             };
         };
@@ -103,10 +108,12 @@ fn main() {
     // println!("{}", out_rx.recv().unwrap());
 
     scan_dir(path, 0, &out_tx);
+
+    outputter.join();
 }
 
 // scan through directories
-fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<FileWithSize>) {
+fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSize>>) {
     match fs::read_dir(&path) {
         Err(why) => {},
         Ok(paths) => {
@@ -120,7 +127,7 @@ fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<FileWithSize>) {
                                 if metadata.is_dir() {
                                     scan_dir(path.path(), currdepth + 1, &out_tx);
                                 } else {
-                                    out_tx.send(FileWithSize { path: path.path().clone(), size: metadata.len() });
+                                    out_tx.send(Some(FileWithSize { path: path.path().clone(), size: metadata.len() }));
                                 }
                             }
                         }
@@ -128,6 +135,10 @@ fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<FileWithSize>) {
                 }
             }
         }
+    }
+
+    if currdepth == 0 {
+        out_tx.send(None);
     }
 }
 
