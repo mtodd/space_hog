@@ -54,39 +54,15 @@ fn main() {
     let mut args: Args = Docopt::new(USAGE)
                                 .and_then(|d| d.decode())
                                 .unwrap_or_else(|e| e.exit());
-    // println!("{:?}", args);
-
     let path = match args.arg_path {
         None => env::current_dir().unwrap(),
         Some(ref path) => PathBuf::from(path),
     };
 
-    // println!("The current directory is {}", path.display());
-
     let mut files: Vec<FileWithSize> = Vec::new();
 
     let (path_tx, path_rx) = channel::<(PathBuf, fs::Metadata)>();
     let (out_tx,  out_rx)  = channel::<Option<FileWithSize>>();
-
-    // path scanner
-    // thread::spawn(move|| {
-    //     match path_rx.recv() {
-    //         Err(why) => { panic!("dir") },
-    //         Ok((path, metadata)) => {
-    //             if !metadata.is_dir() {
-    //                 file_tx.send((path, metadata));
-    //             }
-    //         }
-    //     };
-    // });
-    // thread::spawn(move|| {
-    //     match file_rx.recv() {
-    //         Err(why) => { panic!("file {}", why) },
-    //         Ok((path, metadata)) => {
-    //             out_tx.send(FileWithSize { path: path.clone(), size: metadata.len() });
-    //         }
-    //     };
-    // });
 
     // output
     let outputter = thread::spawn(move|| {
@@ -125,7 +101,9 @@ fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSi
                             Err(why) => {}, // { panic!("metadata for {}", path.path().display()) },
                             Ok(metadata) => {
                                 if metadata.is_dir() {
-                                    scan_dir(path.path(), currdepth + 1, &out_tx, &args);
+                                    if args.flag_recursive && (args.flag_depth == None || currdepth < args.flag_depth.unwrap()) {
+                                        scan_dir(path.path(), currdepth + 1, &out_tx, &args);
+                                    }
                                 } else {
                                     if metadata.len() > threshold {
                                         out_tx.send(Some(FileWithSize { path: path.path().clone(), size: metadata.len() }));
@@ -141,38 +119,5 @@ fn scan_dir(path: PathBuf, mut currdepth: u64, out_tx: &Sender<Option<FileWithSi
 
     if currdepth == 0 {
         out_tx.send(None);
-    }
-}
-
-fn scan(files: &mut Vec<FileWithSize>, path: PathBuf, mut currdepth: u64, args: &Args) {
-    let threshold = args.flag_threshold.unwrap_or_else(|| DEFAULT_THRESHOLD);
-
-    match fs::read_dir(&path) {
-        Err(why) => {},
-        Ok(paths) => {
-            currdepth += 1;
-
-            for path in paths {
-                let upath = path.unwrap().path();
-
-                match fs::metadata(&upath) {
-                    Err(why) => {},
-                    Ok(metadata) => {
-                        let file_size = metadata.len();
-
-                        // report this file
-                        if !metadata.is_dir() && file_size > threshold {
-                            println!("{}\t{}", upath.display(), file_size);
-                            files.push(FileWithSize { path: upath.clone(), size: file_size });
-                        }
-
-                        // recurse directories
-                        if args.flag_recursive && (args.flag_depth == None || currdepth < args.flag_depth.unwrap()) && metadata.is_dir() {
-                            scan(files, upath.clone(), currdepth, args);
-                        }
-                    }
-                }
-            }
-        }
     }
 }
