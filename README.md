@@ -6,6 +6,8 @@ What's hogging all your disk space?
 
 ### Procedural, linear
 
+This implementation (in `master`)
+
 ```
 real	0m16.825s
 user	0m7.861s
@@ -13,6 +15,8 @@ sys	0m7.740s
 ```
 
 ### Threaded
+
+The implementation in the [`channels` branch](https://github.com/mtodd/space_hog/tree/channels)
 
 ```
 real	0m28.251s
