@@ -14,14 +14,27 @@ sys	0m7.740s
 
 ### Threaded
 
+```
+real	0m28.251s
+user	0m19.455s
+sys	0m6.818s
+```
+
 https://doc.rust-lang.org/std/sync/mpsc/fn.channel.html
 
-dir scanner thread
+#### Idea
+
+* dir scanner thread
   * finds directories in a path
   * doesn't have to block these reads on reading file sizes or printing output
-file size reader thread
+* file size reader thread
   * reads filesize for a file path
   * doesn't have to block on reading directory contents or printing output
-printer thread
+* printer thread
   * prints out file path and size
   * doesn't have to walk on reading input
+
+#### Actuality
+
+* dir scanning happens in main thread
+* output happens in separate outputter thread
